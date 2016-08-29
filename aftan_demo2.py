@@ -5,7 +5,7 @@ import numpy as np
 
 
 
-tr=obspy.read('./test2.sac')[0]
+tr=obspy.read('./test.sac')[0]
 atr1=pyaftan.aftantrace(tr.data, tr.stats)
 atr2=pyaftan.aftantrace(tr.data, tr.stats)
 # aftan analysis using pyaftan

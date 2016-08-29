@@ -33,7 +33,7 @@ import matplotlib.pylab as plb
 import os
 import warnings
 from scipy.signal import argrelmax, argrelmin, argrelextrema
-import scipy.interpolate 
+import scipy.interpolate
 try:
     import pyfftw
     useFFTW=True
@@ -344,7 +344,7 @@ class aftantrace(obspy.core.trace.Trace):
                 nfin=nfin, npoints=npoints, perc=perc, predV=predV)
         # phase matched filter aftan
         if pmf:
-            self._aftanipg(piover4=piover4, vmin=vmin, vmax=vmax, tresh=tresh, ffact=ffact, taperl=taperl,
+            return self._aftanipg(piover4=piover4, vmin=vmin, vmax=vmax, tresh=tresh, ffact=ffact, taperl=taperl,
                 snr=snr, fmatch=fmatch, nfin=nfin, npoints=npoints, perc=perc, predV=predV)
         return
 
@@ -603,6 +603,8 @@ class aftantrace(obspy.core.trace.Trace):
         self.ftanparam.tamp_1=tamp = (nb-1)*dt+tb
         return
 
+    
+
     def _aftanipg(self, piover4, vmin, vmax, tresh, ffact, taperl, snr, fmatch, nfin, npoints, perc, predV):
         """ (Automatic Frequency-Time ANalysis) aftan analysis:
         ===========================================================================================================
@@ -689,14 +691,14 @@ class aftantrace(obspy.core.trace.Trace):
             env=np.fft.ifft(fftdata, ns)
         env=2.*env
         dw=omegaArr[0]-omegaArr[-1]
-        t_env=self._tgauss(fsnr=snr, gt0=tg0, dw=dw, n=ns, fmatch=fmatch, seis=env)
+        t_env= self._tgauss(fsnr=snr, gt0=tg0, dw=dw, n=ns, fmatch=fmatch, seis=env)
         #################################
         # End of phase matched filter
         #################################
         if useFFTW:
             fftdata=pyfftw.interfaces.numpy_fft.fft(t_env, ns)
         else:
-            fftdata=np.fft.fft(tdata, ns)
+            fftdata=np.fft.fft(t_env, ns)
         fftdata=fftdata/pha_cor
         omsArr=np.arange(ns)*domega
         phaArr=np.zeros((ne+3-nb, nfin))
@@ -739,6 +741,8 @@ class aftantrace(obspy.core.trace.Trace):
             ind_all.append(ind_localmax)
             dph, tm, ph, t=self._fmax(amp=ampk, pha=phaArr[:,k], ind=ind_localmax, om=omega, piover4=piover4)
             imax=tm.argmax()
+            # ind_sort=np.argsort(tm)
+            # imax=ind_sort[-1]
             ipar=np.zeros((6, ind_localmax.size))
             ipar[0, :]  = (nb+ind_localmax-2.+t)*dt # note the difference with aftanf77, due to ind_localmax
             ipar[1, :]  = 2*np.pi*dt/dph
@@ -764,6 +768,14 @@ class aftantrace(obspy.core.trace.Trace):
                 rmindex=minindexArr[1:]
             ipar[3,:] = 20.*np.log10(ampok[ind_localmax]/np.sqrt(lm*rm))
             ipar[4,:] = (np.abs(ind_localmax-lmindex)+np.abs(ind_localmax-rmindex))/2.*dt
+            
+            # try:
+            #     imax2=ind_sort[-2]
+            #     if imax2<imax:
+            #         imax=imax2
+            # except:
+            #     pass
+            
             tim1[k]   = ipar[0,imax]
             tvis1[k]  = ipar[1,imax]
             ampgr1[k] = ipar[2,imax]
@@ -1029,6 +1041,9 @@ class aftantrace(obspy.core.trace.Trace):
         dist=self.stats.sac.dist
         x=2*np.pi/pred[0,::-1]
         y=dist/pred[1,::-1]
+        ind_x=np.argsort(x)
+        x=x[ind_x]
+        y=y[ind_x]
         spl=scipy.interpolate.CubicSpline(x, y)
         gt0=spl(om0)
         y=y-gt0
@@ -1044,13 +1059,13 @@ class aftantrace(obspy.core.trace.Trace):
         om1 = int(round(max(1, om2d-wd/2)))
         om2 = int(round(min(ns*1, om1+wd)))
         ampdom=np.zeros(ns)
-        iArr1=np.arange(om2-om1+1)+om1
+        iArr1=np.arange(float(om2-om1+1))+om1
         ampdom[om1-1:om2]=(1.-np.cos(np.pi/(om2-om1)*(iArr1-om1)))/2.
         om3d = ome/dom
         wd = max(16., om3d*np.sqrt(tresh/alpha))
         om4 = int(round(min(ns*1, om3d+wd/2)))
         om3  = int(round(max(1, om4-wd)))
-        iArr2=np.arange(om4-om3+1)+om3
+        iArr2=np.arange(float(om4-om3+1))+om3
         iArr2=iArr2[::-1]
         ampdom[om3-1:om4]=(1.-np.cos(np.pi/(om4-om3)*(iArr2-om3)))/2.
         ampdom[om2-1:om3]=1.
@@ -1110,9 +1125,9 @@ class aftantrace(obspy.core.trace.Trace):
             nnl = max(0, nnl)
             nnnl = max(0, nnnl)
             freq =(nnnl-nnl)+1
-            iArr=np.arange(nnnl+1)
+            iArr=np.arange(nnnl+1.)
             tre=-(iArr-nnnl)/freq*(iArr-nnnl)/freq/2.
-            temp_ss=seis[:nnnl+1]
+            temp_ss=ss[:nnnl+1]
             temp_ss[tre>tresh]=temp_ss[tre>tresh]*(np.exp(tre))[tre>tresh]
             temp_ss[tre<=tresh]=0+0j
             ss[:nnnl+1]=temp_ss
@@ -1122,12 +1137,13 @@ class aftantrace(obspy.core.trace.Trace):
             nnr  = min(n-1, nnr)
             nnnr = min(n-1, nnnr)
             freq = (nnr-nnnr)+1
-            iArr = np.arange(n-nnnr)+nnnr+1
+            iArr = np.arange(float(n-nnnr))+nnnr+1
             tre  = -(iArr-nnnr-1)/freq*(iArr-nnnr-1)/freq/2.
-            temp_ss=seis[nnnr:]
+            temp_ss=ss[nnnr:]
             temp_ss[tre>tresh]=temp_ss[tre>tresh]*(np.exp(tre))[tre>tresh]
             temp_ss[tre<=tresh]=0+0j
             ss[nnnr:]=temp_ss
+
         return ss
         
     def aftanf77(self, pmf=True, piover4=-1.0, vmin=1.5, vmax=5.0, tmin=4.0, \
