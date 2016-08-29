@@ -158,6 +158,7 @@ c filtering and FTAN amplitude diagram construction
       call dfftw_plan_dft_1d(plan2,ns,fils,tmp,
      *                         FFTW_BACKWARD, FFTW_ESTIMATE)
 c main loop by frequency
+      !write (*,*) ne-nb+3, nb, ne
       do k = 1,nf
 c filtering
         call ftfilt(alpha,om(k),dom,ns,sf,fils, b)

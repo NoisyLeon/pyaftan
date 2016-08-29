@@ -161,7 +161,7 @@ python module aftan ! in
             integer*4 :: npred
             real*8 dimension(300,2) :: pred
             real*8 :: om1
-            real*8 :: gt0
+            real*8 intent (out):: gt0
         end subroutine pred_cur
         subroutine taper(nb,ne,n,seis,ntapb,ntape,ss,ncorr) ! in :aftan:taper.f
             integer*4 :: nb

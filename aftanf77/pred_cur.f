@@ -21,5 +21,6 @@ c construct spline for ph filter
       enddo
       call mspline(ip+1,npred,x,y,0,0.0d0,0,0.0d0)
       om1 = om0
+      !write(*,*) Gt0
       return
       end

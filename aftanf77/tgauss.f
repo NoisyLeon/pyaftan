@@ -148,6 +148,10 @@ c expand right end by factor fmatch
            endif
        enddo
    40 continue
+      !do i = 1, n
+      !  write(*,*) ss(i)
+      !enddo
+      !write(*,*) nnl, nnnl, nnr, nnnr
 cc Commented for pyaftan       
 c     write(*,*) nnl,nnnl,ism,nnr,nnnr
       return

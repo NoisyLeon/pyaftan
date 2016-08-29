@@ -33,8 +33,10 @@ c--------------------------------------------------------------
       do i = 1,ns
           omdom(i) = (i-1)*dom
       enddo
+
       omstart = omb
       inds = om1
       inde = om4
+      !write (*,*) omstart, inds, inde, ns
       return
       end

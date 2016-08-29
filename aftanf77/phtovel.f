@@ -33,7 +33,6 @@ c find velocity for the largest period by spline interpolation
 c with not a knot boundary conditions
       call mspline(ip+2,npr,prper,prvel,0,0.0d0,0,0.0d0)
       call msplder(ip+2,per(n),Vpred,s,ss,ierr)
-      write(*,*) 'Starting period= ',per(n),', Phase velocity= ',Vpred, ' 1d=', s, ' 2d= ', ss
 c NoisePy     write(*,*) 'Starting period= ',per(n),', Phase velocity= ',Vpred
       phpred = om(n)*(t(n)-delta/Vpred)
       k = nint((phpred -pha(n))/2.0d0/pi)

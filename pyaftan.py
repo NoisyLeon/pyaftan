@@ -1,17 +1,52 @@
+# -*- coding: utf-8 -*-
+"""
+A python module for aftan (Automatic Frequency-Time ANalysis) analysis
+
+This module include two major functions:
+1. aftan written in pure python
+2. a python wrapper for fortran77 version of aftan 
+
+:Dependencies:
+    numpy >=1.9.1
+    scipy >=0.18.0
+    matplotlib >=1.4.3
+    ObsPy >=1.0.1
+    pyfftw 0.10.3 (optional)
+    
+:Copyright:
+    Author: Lili Feng
+    Graduate Research Assistant
+    CIEI, Department of Physics, University of Colorado Boulder
+    email: lili.feng@colorado.edu
+
+:References:
+    Levshin, A. L., and M. H. Ritzwoller. Automated detection, extraction, and measurement of regional surface waves.
+         Monitoring the Comprehensive Nuclear-Test-Ban Treaty: Surface Waves. Birkh?user Basel, 2001. 1531-1545.
+    Bensen, G. D., et al. Processing seismic ambient noise data to obtain reliable broad-band surface wave dispersion measurements.
+         Geophysical Journal International 169.3 (2007): 1239-1260.
+"""
 import obspy
 import numpy as np
-import aftan
 import scipy.interpolate
 import matplotlib.pyplot as plt
+import matplotlib.pylab as plb
 import os
 import warnings
-from scipy.signal import argrelmax, argrelmin
+from scipy.signal import argrelmax, argrelmin, argrelextrema
 import scipy.interpolate 
 try:
     import pyfftw
     useFFTW=True
 except:
     useFFTW=False
+try:
+    import aftan
+    isaftanf77=True
+except:
+    isaftanf77=False
+
+
+
 
 class ftanParam(object):
     """ An object to handle ftan output parameters
@@ -175,7 +210,7 @@ class ftanParam(object):
         return
     
 
-    def FTANcomp(self, inftanparam, compflag=4):
+    def FTANcomp(self, inftanparam, compflag=1):
         """
         Compare aftan results for two ftanParam objects.
         """
@@ -212,15 +247,15 @@ class ftanParam(object):
         plb.figure()
         ax = plt.subplot()
         ax.plot(obper1, gvel1, '--k', lw=3) #
-        ax.plot(obper2, gvel2, '-.b', lw=3)
+        ax.plot(obper2, gvel2, 'bo', markersize=5)
         plt.xlabel('Period(s)')
         plt.ylabel('Velocity(km/s)')
         plt.title('Group Velocity Comparison')
-        if (fparam1.preflag==True and fparam2.preflag==True):
+        if (fparam1.preflag and fparam2.preflag):
             plb.figure()
             ax = plt.subplot()
             ax.plot(obper1, phvel1, '--k', lw=3) #
-            ax.plot(obper2, phvel2, '-.b', lw=3)
+            ax.plot(obper2, phvel2, 'bo', markersize=5)
             plt.xlabel('Period(s)')
             plt.ylabel('Velocity(km/s)')
             plt.title('Phase Velocity Comparison')
@@ -228,8 +263,10 @@ class ftanParam(object):
 
 
 
-def _aftan_gaussian_filter(alpha, omega0, ns, indata, ome):
-    om2 = -(ome-omega0)*(ome-omega0)*alpha/omega0/omega0
+def _aftan_gaussian_filter(alpha, omega0, ns, indata, omsArr):
+    """Internal Gaussian filter function used for aftan
+    """
+    om2 = -(omsArr-omega0)*(omsArr-omega0)*alpha/omega0/omega0
     b=np.exp(om2)
     b[np.abs(om2)>=40.]=0.
     filterred_data=indata*b
@@ -238,10 +275,10 @@ def _aftan_gaussian_filter(alpha, omega0, ns, indata, ome):
     filterred_data[ns/2-1]=filterred_data[ns/2-1].real+0.j
     return filterred_data
     
-    
+
 class aftantrace(obspy.core.trace.Trace):
     """
-    ses3dtrace:
+    aftantrace:
     A derived class inherited from obspy.core.trace.Trace. This derived class have a variety of new member functions
     """
     def init_ftanParam(self):
@@ -249,11 +286,7 @@ class aftantrace(obspy.core.trace.Trace):
         Initialize ftan parameters
         """
         self.ftanparam=ftanParam()
-    def init_snrParam(self):
-        """
-        Initialize SNR parameters
-        """
-        self.SNRParam=snrParam()
+        
     def reverse(self):
         """
         Reverse the trace
@@ -261,8 +294,8 @@ class aftantrace(obspy.core.trace.Trace):
         self.data=self.data[::-1]
         return
     
-    def aftan(self, pmf=True, piover4=-1.0, vmin=1.5, vmax=5.0, tmin=4.0, \
-        tmax=30.0, tresh=20.0, ffact=1.0, taperl=1.0, snr=0.2, fmatch=1.0, phvelname='', predV=np.array([])):
+    def aftan(self, pmf=True, piover4=-1.0, vmin=1.5, vmax=5.0, tmin=4.0, tmax=30.0, tresh=20.0, ffact=1.0,
+            taperl=1.0, snr=0.2, fmatch=1.0, nfin=64, npoints=3, perc=50., phvelname='', predV=np.array([])):
         """ (Automatic Frequency-Time ANalysis) aftan analysis:
         ===========================================================================================================
         Input Parameters:
@@ -277,17 +310,15 @@ class aftantrace(obspy.core.trace.Trace):
         taperl     - factor for the left end seismogram tapering, taper = taperl*tmax,    (real*8)
         snr        - phase match filter parameter, spectra ratio to determine cutting point for phase matched filter
         fmatch     - factor to length of phase matching window
+        nfin       - number of initial period points
+        npoints    - number of continuous points in jump correction
+        perc       - output segment
         phvelname  - predicted phase velocity file name
         predV      - predicted phase velocity curve, period = predV[:, 0],  Vph = predV[:, 1]
         
         Output:
         self.ftanparam, a object of ftanParam class, to store output aftan results
         ===========================================================================================================
-        References:
-        Levshin, A. L., and M. H. Ritzwoller. Automated detection, extraction, and measurement of regional surface waves.
-             Monitoring the Comprehensive Nuclear-Test-Ban Treaty: Surface Waves. Birkh?user Basel, 2001. 1531-1545.
-        Bensen, G. D., et al. Processing seismic ambient noise data to obtain reliable broad-band surface wave dispersion measurements.
-             Geophysical Journal International 169.3 (2007): 1239-1260.
         """
         # preparing for data
         try:
@@ -301,49 +332,54 @@ class aftantrace(obspy.core.trace.Trace):
                                 self.stats.sac.stla, self.stats.sac.stlo) # distance is in m
             self.stats.sac.dist=dist/1000.
             dist=dist/1000.
-        nprpv = 0
-        # phprper=np.zeros(300)
-        # phprvel=np.zeros(300)
         if predV.size != 0:
-            phprper=predV[:,0]
-            phprvel=predV[:,1]
-            nprpv = predV[:,0].size
-            phprper=np.append( phprper, np.zeros(300-phprper.size) )
-            phprvel=np.append( phprvel, np.zeros(300-phprvel.size) )
             self.ftanparam.preflag=True
         elif os.path.isfile(phvelname):
-            # print 'Using prefile:',phvelname
-            php=np.loadtxt(phvelname)
-            phprper=php[:,0]
-            phprvel=php[:,1]
-            nprpv = php[:,0].size
-            phprper=np.append( phprper, np.zeros(300-phprper.size) )
-            phprvel=np.append( phprvel, np.zeros(300-phprvel.size) )
+            predV=np.loadtxt(phvelname)
             self.ftanparam.preflag=True
         else:
             warnings.warn('No predicted dispersion curve for:'+self.stats.network+'.'+self.stats.station, UserWarning, stacklevel=1)
-        ############################################
-        nfin    = 64
-        npoints = 5  #  only 3 points in jump
-        perc    = 50.0 # 50 % for output segment
-        ip      = 1.0
-        ############################################
-        # tempsac=self.copy()
-        # length=len(tempsac.data)
-        # if length>32768:
-        #     warnings.warn('Length of seismogram is larger than 32768!', UserWarning, stacklevel=1)
-        #     nsam=32768
-        #     tempsac.data=tempsac.data[:nsam]
-        #     tempsac.stats.e=(nsam-1)*tempsac.stats.delta+tb
-        #     sig=tempsac.data
-        # else:
-        #     sig=np.append(tempsac.data, np.zeros( float(32768-tempsac.data.size) ) )
-        #     nsam=int( float (tempsac.stats.npts) )### for unknown reasons, this has to be done, nsam=int(tempsac.stats.npts)  won't work as an input for aftan
+        # Basic aftan
+        self._aftanpg(piover4=piover4, vmin=vmin, vmax=vmax, tmin=tmin, tmax=tmax, tresh=tresh, ffact=ffact, taperl=taperl,
+                nfin=nfin, npoints=npoints, perc=perc, predV=predV)
+        # phase matched filter aftan
+        if pmf:
+            self._aftanipg(piover4=piover4, vmin=vmin, vmax=vmax, tresh=tresh, ffact=ffact, taperl=taperl,
+                snr=snr, fmatch=fmatch, nfin=nfin, npoints=npoints, perc=perc, predV=predV)
+        return
+
+    def _aftanpg(self, piover4, vmin, vmax, tmin, tmax, tresh, ffact, taperl, nfin, npoints, perc, predV):
+        """ Basic aftan analysis, internal function
+        ===========================================================================================================
+        Input Parameters:
+        piover4    - phase shift = pi/4*piover4, for cross-correlation piover4 should be -1.0
+        vmin       - minimal group velocity, km/s
+        vmax       - maximal group velocity, km/s
+        tmin       - minimal period, s
+        tmax       - maximal period, s
+        tresh      - treshold for jump detection, usualy = 10, need modifications
+        ffact      - factor to automatic filter parameter, usualy =1
+        taperl     - factor for the left end seismogram tapering, taper = taperl*tmax,    (real*8)
+        nfin       - number of initial period points
+        npoints    - number of continuous points in jump correction
+        perc       - output segment
+        predV      - predicted phase velocity curve, period = predV[:, 0],  Vph = predV[:, 1]
+        ===========================================================================================================
+        Output:
+        self.ftanparam, a object of ftanParam class, to store output aftan results
+        """
+        if self.ftanparam.preflag:
+            phprper=predV[:,0]
+            phprvel=predV[:,1]
+            nprpv = predV[:,0].size
+        else:
+            nprpv=0
+            phprper=np.array([])
+            phprvel=np.array([])
         dt=self.stats.delta
         tb=self.stats.sac.b
         nsam=self.stats.npts
-        # end of preparing data
-        ###
+        dist=self.stats.sac.dist
         # alpha=ffact*20.*np.sqrt(dist/1000.)
         alpha=ffact*20.
         # number of samples for tapering, left and right end
@@ -354,17 +390,14 @@ class aftantrace(obspy.core.trace.Trace):
         # tapering seismogram
         nb = int(max(2, round((dist/vmax-tb)/dt)))
         tamp = (nb-1)*dt+tb
-        ne = int(min(nsam, round((dist/vmin-tb)/dt)+1))
+        ne = int(min(nsam, round((dist/vmin-tb)/dt)))
         nrow = nfin
         ncol = ne-nb+1
-        tArr=np.arange(ne-nb+1)*dt
-        vArr=dist/(tArr+tb)
-        vArr[vArr==np.inf]=9999.
+        tArr=np.arange(ne-nb+1)*dt+tb
+        tArr[tArr==0.]=-1.
+        vArr=dist/tArr
         tdata, ncorr=self.taper( max(nb, ntapb+1), min(ne, self.stats.npts-ntape), ntapb, ntape)
-        
-        # # # old_data=aftan.taper(max(nb, ntapb+1), min(ne, self.stats.npts-ntape), length,sig,ntapb,ntape)
-        # # # return tdata, old_data[0]
-    
+        # prepare for FFT
         ns=max(1<<(ncorr-1).bit_length(), 2**12)  # different !!!
         domega = 2.*np.pi/ns/dt
         step =(np.log(omb)-np.log(ome))/(nfin -1)
@@ -375,15 +408,14 @@ class aftantrace(obspy.core.trace.Trace):
             fftdata=pyfftw.interfaces.numpy_fft.fft(tdata, ns)
         else:
             fftdata=np.fft.fft(tdata, ns)
-        ome=np.arange(ns)*domega
+        omsArr=np.arange(ns)*domega
         phaArr=np.zeros((ne+3-nb, nfin))
         ampo=np.zeros((ne+3-nb, nfin))
         amp=np.zeros((ne+3-nb, nfin))
         #  main loop by frequency
         for k in xrange(nfin):
-            # fs, b = aftan.ftfilt(alpha, omegaArr[k], domega, ns,fftdata)
             # Gaussian filter
-            filterS=_aftan_gaussian_filter(alpha=alpha, omega0=omegaArr[k], ns=ns, indata=fftdata, ome=ome)
+            filterS=_aftan_gaussian_filter(alpha=alpha, omega0=omegaArr[k], ns=ns, indata=fftdata, omsArr=omsArr)
             # return fs, filterS
             if useFFTW:
                 filterT=pyfftw.interfaces.numpy_fft.ifft(filterS, ns)
@@ -399,18 +431,13 @@ class aftantrace(obspy.core.trace.Trace):
         amax=amp.max()
         amp= amp+100.-amax
         amp[amp<40.]=40.
-        # # # ind_lmax=argrelmax(amp, axis=0)
-        # # # index_sort=np.argsort(ind_lmax[1])
-        # # # ind_j=(ind_lmax[0])[index_sort]
-        # # # ind_k=(ind_lmax[1])[index_sort]
-        
-        tim=np.zeros(nfin)
-        tvis=np.zeros(nfin)
-        ampgr=np.zeros(nfin)
-        grvel=np.zeros(nfin)
-        snr=np.zeros(nfin)
-        wdth=np.zeros(nfin)
-        phgr=np.zeros(nfin)
+        tim1=np.zeros(nfin)
+        tvis1=np.zeros(nfin)
+        ampgr1=np.zeros(nfin)
+        grvel1=np.zeros(nfin)
+        snr1=np.zeros(nfin)
+        wdth1=np.zeros(nfin)
+        phgr1=np.zeros(nfin)
         ind_all=[]
         ipar_all=[]
         for k in xrange(nfin):
@@ -448,34 +475,29 @@ class aftantrace(obspy.core.trace.Trace):
                 rmindex=minindexArr[1:]
             ipar[3,:] = 20.*np.log10(ampok[ind_localmax]/np.sqrt(lm*rm))
             ipar[4,:] = (np.abs(ind_localmax-lmindex)+np.abs(ind_localmax-rmindex))/2.*dt
-            tim[k]   = ipar[0,imax]
-            tvis[k]  = ipar[1,imax]
-            ampgr[k] = ipar[2,imax]
-            grvel[k] = dist/(tim[k] +tb) 
-            snr[k]   = ipar[3,imax]
-            wdth[k]  = ipar[4,imax] ### Note half width is not completely the same as ftanf77, need further check!!!
-            phgr[k]  = ipar[5,imax]
+            tim1[k]   = ipar[0,imax]
+            tvis1[k]  = ipar[1,imax]
+            ampgr1[k] = ipar[2,imax]
+            grvel1[k] = dist/(tim1[k] +tb) 
+            snr1[k]   = ipar[3,imax]
+            wdth1[k]  = ipar[4,imax] ### Note half width is not completely the same as ftanf77, need further check!!!
+            phgr1[k]  = ipar[5,imax]
             ipar_all.append(ipar)
         nfout1=nfin
+        per1=perArr
         ################################################
         #       Check jumps in dispersion curve 
         ################################################
-        grvel1=grvel.copy()
-        tvis1 =tvis.copy()
-        ampgr1=ampgr.copy()
-        phgr1 =phgr.copy()
-        snr1  =snr.copy()
-        wdth1 =wdth.copy()
-        ftrig1, trig1, ierr=self._trigger(grvel=grvel, om=omegaArr, tresh=tresh)
-        # a=np.zeros(100)
-        # b=np.zeros(100)
-        # a[:64]=grvel
-        # b[:64]=omegaArr
-        # trig_old, ftrig_old, ierr=aftan.trigger(a, b, nfin, tresh)
-        # return trig1, trig_old, ftrig1, ftrig_old
+        grvel2=grvel1.copy()
+        tvis2 =tvis1.copy()
+        ampgr2=ampgr1.copy()
+        phgr2 =phgr1.copy()
+        snr2  =snr1.copy()
+        wdth2 =wdth1.copy()
+        ftrig1, trig, ierr=self._trigger(grvel=grvel1, om=omegaArr, tresh=tresh)
         if ierr !=0:
-            deltrig1=trig1[1:]-trig1[:-1]
-            ijmp=np.where(np.abs(deltrig1)>1.5)[0]
+            deltrig=trig[1:]-trig[:-1]
+            ijmp=np.where(np.abs(deltrig)>1.5)[0]
             if ijmp.size>1: ### need check
                 delijmp=ijmp[1:]-ijmp[:-1]
                 ii=np.where(delijmp<npoints)[0]
@@ -483,12 +505,12 @@ class aftantrace(obspy.core.trace.Trace):
                 # Try to correct jumps by finding another local maximum as group arrival
                 ##########################################################################
                 if ii.size!=0:
-                    grvelt=grvel1.copy()
-                    tvist =tvis1.copy()
-                    ampgrt=ampgr1.copy()
-                    phgrt =phgr1.copy()
-                    snrt  =snr1.copy()
-                    wdtht =wdth1.copy()
+                    grvelt=grvel2.copy()
+                    tvist =tvis2.copy()
+                    ampgrt=ampgr2.copy()
+                    phgrt =phgr2.copy()
+                    snrt  =snr2.copy()
+                    wdtht =wdth2.copy()
                     for kk in ii:
                         istrt= ijmp[kk]
                         ibeg = istrt+1
@@ -498,99 +520,378 @@ class aftantrace(obspy.core.trace.Trace):
                             k=ibeg+i
                             ind_localmax=ind_all[k]
                             ipar=ipar_all[k]
-                            wor = np.abs(dist/(ipar[0,:]+tb)-grvel1[k-1]) 
+                            wor = np.abs(dist/(ipar[0,:]+tb)-grvel2[k-1]) 
                             ima =wor.argmin() # find group arrivals that has smallest 
-                            grvel1[k] = dist/(ipar[0,ima]+tb)
-                            tvis1[k]  = ipar[1,ima]
-                            ampgr1[k] = ipar[2,ima]
-                            phgr1[k]  = ipar[5,ima]
-                            snr1[k]   = ipar[3,ima]
-                            wdth1[k]  = ipar[4,ima]
-                        ftrig1, trig1, ierr=self._trigger(grvel=grvel1, om=omegaArr, tresh=tresh)
-                        temptrig=trig1[istrt:iend+2]
+                            grvel2[k] = dist/(ipar[0,ima]+tb)
+                            tvis2[k]  = ipar[1,ima]
+                            ampgr2[k] = ipar[2,ima]
+                            phgr2[k]  = ipar[5,ima]
+                            snr2[k]   = ipar[3,ima]
+                            wdth2[k]  = ipar[4,ima]
+                        ftrig2, trig, ierr=self._trigger(grvel=grvel2, om=omegaArr, tresh=tresh)
+                        temptrig=trig[istrt:iend+2]
                         if (np.where(temptrig>0.5)[0]).size==0:
-                            grvelt=grvel1.copy()
-                            tvist =tvis1.copy()
-                            ampgrt=ampgr1.copy()
-                            phgrt =phgr1.copy()
-                            snrt  =snr1.copy()
-                            wdtht =wdth1.copy()
-                    grvel1=grvelt.copy()
-                    tvis1 =tvist.copy()
-                    ampgr1=ampgrt.copy()
-                    phgr1 =phgrt.copy()
-                    snr1  =snrt.copy()
-                    wdth1 =wdtht.copy()
-                    ftrig1, trig1, ierr=self._trigger(grvel=grvel1, om=omegaArr, tresh=tresh)
+                            grvelt=grvel2.copy()
+                            tvist =tvis2.copy()
+                            ampgrt=ampgr2.copy()
+                            phgrt =phgr2.copy()
+                            snrt  =snr2.copy()
+                            wdtht =wdth2.copy()
+                    grvel2=grvelt.copy()
+                    tvis2 =tvist.copy()
+                    ampgr2=ampgrt.copy()
+                    phgr2 =phgrt.copy()
+                    snr2  =snrt.copy()
+                    wdth2 =wdtht.copy()
+                    ftrig2, trig, ierr=self._trigger(grvel=grvel2, om=omegaArr, tresh=tresh)
             ################################################
             # after correcting possible jumps, we cut frequency range to single
             # segment with maximum length
             ################################################
             if ierr!=0:
-                indx=np.where(np.abs(trig1)>0.5)[0]
+                indx=np.where(np.abs(trig)>0.5)[0]
                 indx=np.append(indx, nfin-1)
                 iimax = indx[1:]-indx[:-1]
                 ipos=iimax.argmax()
                 ist = max(indx[ipos], 0)
                 ibe = min(indx[ipos+1], nfin-1)
                 nfout2= ibe-ist+1
-                per1  =perArr[ist:ibe+1]
-                grvel1=grvel1[ist:ibe+1]
-                tvis1 =tvis1[ist:ibe+1]
-                ampgr1=ampgr1[ist:ibe+1]
-                phgr1 =phgr1[ist:ibe+1]
-                snr1  =snr1[ist:ibe+1]
-                wdth1 =wdth1[ist:ibe+1]
+                per2  =perArr[ist:ibe+1]
+                grvel2=grvel2[ist:ibe+1]
+                tvis2 =tvis2[ist:ibe+1]
+                ampgr2=ampgr2[ist:ibe+1]
+                phgr2 =phgr2[ist:ibe+1]
+                snr2  =snr2[ist:ibe+1]
+                wdth2 =wdth2[ist:ibe+1]
             else:
                 nfout2 = nfin
-                per1   = perArr.copy()
+                per2   = perArr.copy()
         else:
             nfout2 = nfin
-            per1   = perArr.copy() 
+            per2   = perArr.copy() 
         ################################################
         # fill out output data arrays
         ################################################
         if nprpv!=0:
-            phV=self._phtovel(per=tvis, U=grvel, pha=phgr, npr=nprpv, prper=phprper[:nprpv], prvel=phprvel[:nprpv])
-            phV1=self._phtovel(per=tvis1, U=grvel1, pha=phgr1, npr=nprpv, prper=phprper[:nprpv], prvel=phprvel[:nprpv])
-        
-        self.ftanparam.nfout1_1=nfin
-        self.ftanparam.arr1_1=np.array([])
-        self.ftanparam.nfout2_1=nfout2
-        self.ftanparam.arr2_1=np.array([])
-        self.ftanparam.tamp_1=
-        self.ftanparam.nrow_1=0
-        self.ftanparam.ncol_1=0
-        self.ftanparam.ampo_1=np.array([],dtype='float32')
-        self.ftanparam.ierr_1=0
-        # Parameters for second iteration
-        self.nfout1_2=0
-        self.arr1_2=np.array([])
-        self.nfout2_2=0
-        self.arr2_2=np.array([])
-        self.tamp_2=0.
-        self.nrow_2=0
-        self.ncol_2=0
-        self.ampo_2=np.array([])
-        self.ierr_2=0
-        # Flag for existence of predicted phase dispersion curve
-        self.preflag=False
-        self.station_id=None
-            
-        #     
-        #     U=np.append( grvel1, np.zeros(100-grvel1.size) )
-        #     pha=np.append( phgr1, np.zeros(100-phgr1.size) )
-        #     # # phtovel(delta,ip,n,per,U,pha,npr,prper,prvel,V)
-        #     per=np.append( tvis1, np.zeros(100-tvis1.size) )
-        #     phV_old=aftan.phtovel(dist, 1, tvis1.size, per, U, pha, nprpv, phprper, phprvel)
-        # return phV, phV_old
-        
-        
-        
-        
-        
-
+            phV1=self._phtovel(per=tvis1, U=grvel1, pha=phgr1, npr=nprpv, prper=phprper, prvel=phprvel)
+            amp1=10.**( (ampgr1-100.+amax) /20.)
+            self.ftanparam.nfout1_1=nfout1
+            arr1_1=np.concatenate((per1, tvis1, grvel1, phV1, ampgr1, ftrig1, snr1, wdth1, amp1))
+            self.ftanparam.arr1_1=arr1_1.reshape(9, per1.size)
+            if nfout2!=0:
+                phV2=self._phtovel(per=tvis2, U=grvel2, pha=phgr2, npr=nprpv, prper=phprper, prvel=phprvel)
+                amp2=10.**( (ampgr2-100.+amax) /20.)
+                self.ftanparam.nfout2_1=nfout2
+                arr2_1=np.concatenate((per2, tvis2, grvel2, phV2, ampgr2, snr2, wdth2, amp2))
+                self.ftanparam.arr2_1=arr2_1.reshape(8, per2.size)
+        else:
+            amp1=10.**( (ampgr1-100.+amax) /20.)
+            self.ftanparam.nfout1_1=nfout1
+            arr1_1=np.concatenate((per1, tvis1, grvel1, phgr1, ampgr1, ftrig1, snr1, wdth1, amp1))
+            self.ftanparam.arr1_1=arr1_1.reshape(9, per1.size)
+            if nfout2!=0:
+                amp2=10.**( (ampgr2-100.+amax) /20.)
+                self.ftanparam.nfout2_1=nfout2
+                arr2_1=np.concatenate((per2, tvis2, grvel2, phgr2, ampgr2, snr2, wdth2, amp2))
+                self.ftanparam.arr2_1=arr2_1.reshape(8, per2.size)
+        self.ftanparam.ampo_1=amp
+        self.ftanparam.ncol_1, self.ftanparam.nrow_1 = amp.shape
+        if nfout2<perc*nfin/100:
+            self.ftanparam.ierr_1=2
+        else:
+            self.ftanparam.ierr_1=ierr
+        self.ftanparam.tamp_1=tamp = (nb-1)*dt+tb
         return
+
+    def _aftanipg(self, piover4, vmin, vmax, tresh, ffact, taperl, snr, fmatch, nfin, npoints, perc, predV):
+        """ (Automatic Frequency-Time ANalysis) aftan analysis:
+        ===========================================================================================================
+        Input Parameters:
+        piover4    - phase shift = pi/4*piover4, for cross-correlation piover4 should be -1.0
+        vmin       - minimal group velocity, km/s
+        vmax       - maximal group velocity, km/s
+        tmin       - minimal period, s
+        tmax       - maximal period, s
+        tresh      - treshold for jump detection, usualy = 10, need modifications
+        ffact      - factor to automatic filter parameter, usualy =1
+        taperl     - factor for the left end seismogram tapering, taper = taperl*tmax,    (real*8)
+        snr        - phase match filter parameter, spectra ratio to determine cutting point for phase matched filter
+        fmatch     - factor to length of phase matching window
+        nfin       - number of initial period points
+        npoints    - number of continuous points in jump correction
+        perc       - output segment
+        predV      - predicted phase velocity curve, period = predV[:, 0],  Vph = predV[:, 1]
+        ===========================================================================================================
+        Output:
+        self.ftanparam, a object of ftanParam class, to store output aftan results
+        """
+        if self.ftanparam.preflag:
+            phprper=predV[:,0]
+            phprvel=predV[:,1]
+            nprpv = predV[:,0].size
+        else:
+            nprpv=0
+            phprper=np.array([])
+            phprvel=np.array([])
+        tmin = self.ftanparam.arr2_1[1,0]
+        tmax = self.ftanparam.arr2_1[1,-1]
+        dt=self.stats.delta
+        tb=self.stats.sac.b
+        nsam=self.stats.npts
+        dist=self.stats.sac.dist
+        # end of preparing data
+        # alpha=ffact*20.*np.sqrt(dist/1000.)
+        alpha=ffact*20.
+        # number of samples for tapering, left and right end
+        ntapb = int(round(taperl*tmax/dt))
+        ntape = int(round(tmax/dt))
+        omb = 2.0*np.pi/tmax
+        ome = 2.0*np.pi/tmin
+        tg0, cubicspline=self._pred_cur(np.sqrt(omb*ome))
+        # tapering seismogram
+        nb = int(max(2, round((dist/vmax-tb)/dt)))
+        tamp = (nb-1)*dt+tb
+        ne = int(min(nsam, round((dist/vmin-tb)/dt)))
+        nrow = nfin
+        ncol = ne-nb+1
+        tArr=np.arange(ne-nb+1)*dt+tb
+        tArr[tArr==0.]=-1.
+        vArr=dist/tArr
+        tdata, ncorr=self.taper( max(nb, ntapb+1), min(ne, self.stats.npts-ntape), ntapb, ntape)        
+        ns=max(1<<(ncorr-1).bit_length(), 2**12)  # different !!!
+        domega = 2.*np.pi/ns/dt
+        step =(np.log(omb)-np.log(ome))/(nfin -1)
+        omegaArr=np.exp(np.log(ome)+np.arange(nfin)*step)
+        perArr=2.*np.pi/omegaArr
+        ################################################
+        # Phase Matched Filtering
+        ################################################
+        # FFT
+        if useFFTW:
+            fftdata=pyfftw.interfaces.numpy_fft.fft(tdata, ns)
+        else:
+            fftdata=np.fft.fft(tdata, ns)
+        # spectral taperring
+        omstart, inds, inde, omdom, ampdom = self._tapers(omb=omb, ome=ome, dom=domega, alpha=alpha, ns=ns )
+        omstart = float(round(omstart/domega))*domega
+        inde    = min(inde, ns/2+2)
+        pha_cor = np.zeros(ns, dtype='complex64')
+        for i in xrange(ns):
+            pha_cor.real[i]=cubicspline.integrate(a=np.sqrt(omb*ome), b=omdom[i])
+        pha_cor.real[:inds-1]=0.
+        pha_cor.real[inde:]=0.
+        dci=0+1j
+        pha_cor = np.exp(dci*pha_cor)
+        fftdata=fftdata*pha_cor*ampdom
+        if useFFTW:
+            env=pyfftw.interfaces.numpy_fft.ifft(fftdata, ns)
+        else:
+            env=np.fft.ifft(fftdata, ns)
+        env=2.*env
+        dw=omegaArr[0]-omegaArr[-1]
+        t_env=self._tgauss(fsnr=snr, gt0=tg0, dw=dw, n=ns, fmatch=fmatch, seis=env)
+        #################################
+        # End of phase matched filter
+        #################################
+        if useFFTW:
+            fftdata=pyfftw.interfaces.numpy_fft.fft(t_env, ns)
+        else:
+            fftdata=np.fft.fft(tdata, ns)
+        fftdata=fftdata/pha_cor
+        omsArr=np.arange(ns)*domega
+        phaArr=np.zeros((ne+3-nb, nfin))
+        ampo=np.zeros((ne+3-nb, nfin))
+        amp=np.zeros((ne+3-nb, nfin))
+        #  main loop by frequency
+        for k in xrange(nfin):
+            # Gaussian filter
+            filterS=_aftan_gaussian_filter(alpha=alpha, omega0=omegaArr[k], ns=ns, indata=fftdata, omsArr=omsArr)
+            if useFFTW:
+                filterT=pyfftw.interfaces.numpy_fft.ifft(filterS, ns)
+            else:
+                filterT=np.fft.ifft(filterS, ns)
+            # need to multiply by 2 due to zero padding of negative frequencies
+            # but NO NEED to divide by ns due to the difference of numpy style and FFTW style
+            filterT=2.*filterT 
+            phaArr[:,k]=np.arctan2(np.imag(filterT[nb-2:ne+1]), np.real(filterT[nb-2:ne+1]))
+            ampo[:,k] = np.abs(filterT[nb-2:ne+1])
+            amp[:,k] = 20.*np.log10(ampo[:,k])
+        # normalization amp diagram to 100 Db with three decade cutting
+        amax=amp.max()
+        amp= amp+100.-amax
+        amp[amp<40.]=40.        
+        tim1=np.zeros(nfin)
+        tvis1=np.zeros(nfin)
+        ampgr1=np.zeros(nfin)
+        grvel1=np.zeros(nfin)
+        snr1=np.zeros(nfin)
+        wdth1=np.zeros(nfin)
+        phgr1=np.zeros(nfin)
+        ind_all=[]
+        ipar_all=[]
+        for k in xrange(nfin):
+            ampk=amp[:,k]
+            ampok=ampo[:,k]
+            ind_localmax=argrelmax(ampk)[0]
+            omega=omegaArr[k]
+            if ind_localmax.size==0:
+                ind_localmax=np.append(ind_localmax, ne+1-nb)
+            ind_all.append(ind_localmax)
+            dph, tm, ph, t=self._fmax(amp=ampk, pha=phaArr[:,k], ind=ind_localmax, om=omega, piover4=piover4)
+            imax=tm.argmax()
+            ipar=np.zeros((6, ind_localmax.size))
+            ipar[0, :]  = (nb+ind_localmax-2.+t)*dt # note the difference with aftanf77, due to ind_localmax
+            ipar[1, :]  = 2*np.pi*dt/dph
+            ipar[2, :]  = tm
+            ipar[5, :]  = ph
+            if ind_localmax.size==1:
+                lmindex=(ampok[:ind_localmax[0]]).argmin()
+                rmindex=(ampok[ind_localmax[0]:]).argmin()
+                lm=(ampok[:ind_localmax[0]])[lmindex]
+                rm=(ampok[ind_localmax[0]:])[rmindex]
+            else:
+                splitArr=np.split(ampok, ind_localmax)
+                minArr=np.array([])
+                minindexArr=np.array([])
+                for tempArr in splitArr:
+                    temp_ind_min=tempArr.argmin()
+                    minArr=np.append(minArr, tempArr[temp_ind_min])
+                    minindexArr=np.append(minindexArr, temp_ind_min)
+                lm=minArr[:-1]
+                rm=minArr[1:]
+                minindexArr[1:]=minindexArr[1:]+ind_localmax
+                lmindex=minindexArr[:-1]
+                rmindex=minindexArr[1:]
+            ipar[3,:] = 20.*np.log10(ampok[ind_localmax]/np.sqrt(lm*rm))
+            ipar[4,:] = (np.abs(ind_localmax-lmindex)+np.abs(ind_localmax-rmindex))/2.*dt
+            tim1[k]   = ipar[0,imax]
+            tvis1[k]  = ipar[1,imax]
+            ampgr1[k] = ipar[2,imax]
+            grvel1[k] = dist/(tim1[k] +tb) 
+            snr1[k]   = ipar[3,imax]
+            wdth1[k]  = ipar[4,imax] ### Note half width is not completely the same as ftanf77, need further check!!!
+            phgr1[k]  = ipar[5,imax]
+            ipar_all.append(ipar)
+        nfout1=nfin
+        per1=perArr
+        ################################################
+        #       Check jumps in dispersion curve 
+        ################################################
+        grvel2=grvel1.copy()
+        tvis2 =tvis1.copy()
+        ampgr2=ampgr1.copy()
+        phgr2 =phgr1.copy()
+        snr2  =snr1.copy()
+        wdth2 =wdth1.copy()
+        ftrig1, trig, ierr=self._trigger(grvel=grvel1, om=omegaArr, tresh=tresh)
+        if ierr !=0:
+            deltrig=trig[1:]-trig[:-1]
+            ijmp=np.where(np.abs(deltrig)>1.5)[0]
+            if ijmp.size>1: ### need check
+                delijmp=ijmp[1:]-ijmp[:-1]
+                ii=np.where(delijmp<npoints)[0]
+                ##########################################################################
+                # Try to correct jumps by finding another local maximum as group arrival
+                ##########################################################################
+                if ii.size!=0:
+                    grvelt=grvel2.copy()
+                    tvist =tvis2.copy()
+                    ampgrt=ampgr2.copy()
+                    phgrt =phgr2.copy()
+                    snrt  =snr2.copy()
+                    wdtht =wdth2.copy()
+                    for kk in ii:
+                        istrt= ijmp[kk]
+                        ibeg = istrt+1
+                        iend = ijmp[kk+1]
+                        ### nested loop, need further improvements
+                        for i in xrange(iend-ibeg+1):
+                            k=ibeg+i
+                            ind_localmax=ind_all[k]
+                            ipar=ipar_all[k]
+                            wor = np.abs(dist/(ipar[0,:]+tb)-grvel2[k-1]) 
+                            ima =wor.argmin() # find group arrivals that has smallest 
+                            grvel2[k] = dist/(ipar[0,ima]+tb)
+                            tvis2[k]  = ipar[1,ima]
+                            ampgr2[k] = ipar[2,ima]
+                            phgr2[k]  = ipar[5,ima]
+                            snr2[k]   = ipar[3,ima]
+                            wdth2[k]  = ipar[4,ima]
+                        ftrig2, trig, ierr=self._trigger(grvel=grvel2, om=omegaArr, tresh=tresh)
+                        temptrig=trig[istrt:iend+2]
+                        if (np.where(temptrig>0.5)[0]).size==0:
+                            grvelt=grvel2.copy()
+                            tvist =tvis2.copy()
+                            ampgrt=ampgr2.copy()
+                            phgrt =phgr2.copy()
+                            snrt  =snr2.copy()
+                            wdtht =wdth2.copy()
+                    grvel2=grvelt.copy()
+                    tvis2 =tvist.copy()
+                    ampgr2=ampgrt.copy()
+                    phgr2 =phgrt.copy()
+                    snr2  =snrt.copy()
+                    wdth2 =wdtht.copy()
+                    ftrig2, trig, ierr=self._trigger(grvel=grvel2, om=omegaArr, tresh=tresh)
+            ################################################
+            # after correcting possible jumps, we cut frequency range to single
+            # segment with maximum length
+            ################################################
+            if ierr!=0:
+                indx=np.where(np.abs(trig)>0.5)[0]
+                indx=np.append(indx, nfin-1)
+                iimax = indx[1:]-indx[:-1]
+                ipos=iimax.argmax()
+                ist = max(indx[ipos], 0)
+                ibe = min(indx[ipos+1], nfin-1)
+                nfout2= ibe-ist+1
+                per2  =perArr[ist:ibe+1]
+                grvel2=grvel2[ist:ibe+1]
+                tvis2 =tvis2[ist:ibe+1]
+                ampgr2=ampgr2[ist:ibe+1]
+                phgr2 =phgr2[ist:ibe+1]
+                snr2  =snr2[ist:ibe+1]
+                wdth2 =wdth2[ist:ibe+1]
+            else:
+                nfout2 = nfin
+                per2   = perArr.copy()
+        else:
+            nfout2 = nfin
+            per2   = perArr.copy() 
+        ################################################
+        # fill out output data arrays
+        ################################################
+        if nprpv!=0:
+            phV1=self._phtovel(per=tvis1, U=grvel1, pha=phgr1, npr=nprpv, prper=phprper, prvel=phprvel)
+            amp1=10.**( (ampgr1-100.+amax) /20.)
+            self.ftanparam.nfout1_2=nfout1
+            arr1_2=np.concatenate((per1, tvis1, grvel1, phV1, ampgr1, ftrig1, snr1, wdth1, amp1))
+            self.ftanparam.arr1_2=arr1_2.reshape(9, per1.size)
+            if nfout2!=0:
+                phV2=self._phtovel(per=tvis2, U=grvel2, pha=phgr2, npr=nprpv, prper=phprper, prvel=phprvel)
+                amp2=10.**( (ampgr2-100.+amax) /20.)
+                self.ftanparam.nfout2_2=nfout2
+                arr2_2=np.concatenate((per2, tvis2, grvel2, phV2, ampgr2, snr2, wdth2, amp2))
+                self.ftanparam.arr2_2=arr2_2.reshape(8, per2.size)
+        else:
+            amp1=10.**( (ampgr1-100.+amax) /20.)
+            self.ftanparam.nfout1_2=nfout1
+            arr1_2=np.concatenate((per1, tvis1, grvel1, phgr1, ampgr1, ftrig1, snr1, wdth1, amp1))
+            self.ftanparam.arr1_2=arr1_2.reshape(9, per1.size)
+            if nfout2!=0:
+                amp2=10.**( (ampgr2-100.+amax) /20.)
+                self.ftanparam.nfout2_2=nfout2
+                arr2_2=np.concatenate((per2, tvis2, grvel2, phgr2, ampgr2, snr2, wdth2, amp2))
+                self.ftanparam.arr2_2=arr2_2.reshape(8, per2.size)
+        self.ftanparam.ampo_2=amp
+        self.ftanparam.ncol_2, self.ftanparam.nrow_2 = amp.shape
+        if nfout2<perc*nfin/100:
+            self.ftanparam.ierr_2=2
+        else:
+            self.ftanparam.ierr_2=ierr
+        self.ftanparam.tamp_2=tamp = (nb-1)*dt+tb
+        return
+    
     
     def _compare_arr(self, data1, data2):
         plt.plot(data1-data2, '-y')
@@ -653,16 +954,10 @@ class aftantrace(obspy.core.trace.Trace):
             dataTapered[ne-1:] = dataTapered[ne-1:] + rwine*c
         dataTapered[nb:ne-1]=dataTapered[nb:ne-1]+c
         return dataTapered, ncorr
-            
-    
-    # def _fmax(self, amp, pha, ind_j, ind_k, om, dt, t, dph, tm, ph, piover4 ):
-    #     ind_jl=ind_j-1.
-    #     ind_jr=ind_j+1.
-    #     dd=amp[ind_jl, ind_k]+amp[ind_jr, ind_k]-2.*amp[ind_j, ind_k]
-    #     t=(amp[ind_jl, ind_k]-amp[ind_jr, ind_k])/dd/2.0
-    #     t[dd==0]=0.
     
     def _fmax(self, amp, pha, ind, om, piover4 ):
+        """parabolic interpolation of signal amplitude and phase, finding phase derivative
+        """
         dt=self.stats.delta
         ind_l=ind-1
         ind_r=ind+1
@@ -685,6 +980,8 @@ class aftantrace(obspy.core.trace.Trace):
         return dph, tm, ph, t
         
     def _trigger(self, grvel, om , tresh):
+        """Detect jumps in dispersion curve
+        """
         nf=om.size
         hh1 = om[1:nf-1]-om[:nf-2]
         hh2 = om[2:]-om[1:nf-1]
@@ -704,18 +1001,14 @@ class aftantrace(obspy.core.trace.Trace):
         return ftrig, trig, ierr
     
     def _phtovel(self, per, U, pha, npr, prper, prvel):
+        """Convert observed phase to phase velocity
+        """
         dist=self.stats.sac.dist
         omegaArr=2.*np.pi/per
         T=dist/U
         sU=1./U
-        # cs = CubicSpline(prper, prvel)
-        # spl=scipy.interpolate.UnivariateSpline(prper, prvel, k=4, ext=3)
         spl=scipy.interpolate.CubicSpline(prper, prvel)
-        # spl1=spl.derivative(1)
-        # spl2=spl.derivative(2)
         Vpred=spl(per[-1])
-        # ds=spl1(per[-1])
-        # ds2=spl2(per[-1])
         phpred = omegaArr[-1]*(T[-1]-dist/Vpred)
         k=round((phpred -pha[-1])/2.0/np.pi)
         phV=np.zeros(U.size)
@@ -728,8 +1021,115 @@ class aftantrace(obspy.core.trace.Trace):
             k = round((phpred -pha[m])/2.0/np.pi)
             phV[m] = dist/(T[m]-(pha[m]+2.0*k*np.pi)/omegaArr[m])
         return phV
-        
     
+    def _pred_cur(self, om0):
+        """create phase prediction curve by group velocity, will be used for phase matched filter
+        """        
+        pred=self.ftanparam.arr2_1[1:3,:]
+        dist=self.stats.sac.dist
+        x=2*np.pi/pred[0,::-1]
+        y=dist/pred[1,::-1]
+        spl=scipy.interpolate.CubicSpline(x, y)
+        gt0=spl(om0)
+        y=y-gt0
+        spl=scipy.interpolate.CubicSpline(x, y)
+        return gt0, spl
+        
+    def _tapers(self, omb, ome, dom, alpha, ns):
+        """spectra tapering
+        """        
+        om2d=omb/dom
+        tresh=0.5
+        wd = max(16., om2d*np.sqrt(tresh/alpha) )
+        om1 = int(round(max(1, om2d-wd/2)))
+        om2 = int(round(min(ns*1, om1+wd)))
+        ampdom=np.zeros(ns)
+        iArr1=np.arange(om2-om1+1)+om1
+        ampdom[om1-1:om2]=(1.-np.cos(np.pi/(om2-om1)*(iArr1-om1)))/2.
+        om3d = ome/dom
+        wd = max(16., om3d*np.sqrt(tresh/alpha))
+        om4 = int(round(min(ns*1, om3d+wd/2)))
+        om3  = int(round(max(1, om4-wd)))
+        iArr2=np.arange(om4-om3+1)+om3
+        iArr2=iArr2[::-1]
+        ampdom[om3-1:om4]=(1.-np.cos(np.pi/(om4-om3)*(iArr2-om3)))/2.
+        ampdom[om2-1:om3]=1.
+        omdom=np.arange(ns)*dom
+        omstart = omb
+        inds = om1
+        inde = om4
+        return omstart, inds, inde, omdom, ampdom
+    
+
+    def _tgauss(self, fsnr, gt0, dw, n, fmatch, seis):
+        """taper phase matched signal
+        """        
+        ss=seis.copy()
+        dt=self.stats.delta
+        t0=self.stats.sac.b
+        nc=round(gt0/dt)+1
+        smax=np.abs(seis)
+        ism=smax.argmax()
+        sm=smax[ism]
+        local_le=argrelextrema(smax, np.less_equal)[0]
+        local_e=argrelextrema(smax, np.equal)[0]
+        ind_localminima=np.setxor1d(local_le, local_e, assume_unique=True)
+        ind_left=ind_localminima[ind_localminima<ism]
+        ind_right=ind_localminima[ind_localminima>ism]
+        val_left=smax[ind_left]
+        val_right=smax[ind_right]
+        nnnl=0
+        if ind_left.size!=0:
+            temp_nnnl=ind_left[((ism-ind_left)*dt>5.)*(val_left<fsnr*sm)]
+            if temp_nnnl.size!=0:
+                nnnl=temp_nnnl[-1]
+                if temp_nnnl.size > 1:
+                    nnl=temp_nnnl[-2]
+                else:
+                    nnl=0
+        nnnr=0
+        if ind_right.size!=0:
+            temp_nnnr=ind_right[((ind_right-ism)*dt>5.)*(val_right<fsnr*sm)]
+            if temp_nnnr.size!=0:
+                nnnr=temp_nnnr[0]
+                if temp_nnnr.size > 1:
+                    nnr=temp_nnnr[1]
+                else:
+                    nnr=n-1        
+        if nnnr!=0 and nnnl!=0:
+            nn = max(abs(ism-nnnl), abs(ism-nnnr))
+            nnn = max(abs(nnnl-nnl), abs(nnnr-nnr))
+            nnnl = ism -nn
+            nnl = nnnl-nnn
+            nnnr = ism +nn
+            nnr = nnnr+nnn
+        tresh = np.log(sm)-24.
+        if nnnl!=0:
+            nnl = int(round((nnl-ism)*fmatch))+ism
+            nnnl = int(round((nnnl-ism)*fmatch))+ism
+            nnl = max(0, nnl)
+            nnnl = max(0, nnnl)
+            freq =(nnnl-nnl)+1
+            iArr=np.arange(nnnl+1)
+            tre=-(iArr-nnnl)/freq*(iArr-nnnl)/freq/2.
+            temp_ss=seis[:nnnl+1]
+            temp_ss[tre>tresh]=temp_ss[tre>tresh]*(np.exp(tre))[tre>tresh]
+            temp_ss[tre<=tresh]=0+0j
+            ss[:nnnl+1]=temp_ss
+        if nnnr!=0:
+            nnr  = int(round((nnr-ism)*fmatch))+ism
+            nnnr = int(round((nnnr-ism)*fmatch))+ism
+            nnr  = min(n-1, nnr)
+            nnnr = min(n-1, nnnr)
+            freq = (nnr-nnnr)+1
+            iArr = np.arange(n-nnnr)+nnnr+1
+            tre  = -(iArr-nnnr-1)/freq*(iArr-nnnr-1)/freq/2.
+            temp_ss=seis[nnnr:]
+            temp_ss[tre>tresh]=temp_ss[tre>tresh]*(np.exp(tre))[tre>tresh]
+            temp_ss[tre<=tresh]=0+0j
+            ss[nnnr:]=temp_ss
+        return ss
+        
     def aftanf77(self, pmf=True, piover4=-1.0, vmin=1.5, vmax=5.0, tmin=4.0, \
         tmax=30.0, tresh=20.0, ffact=1.0, taperl=1.0, snr=0.2, fmatch=1.0, phvelname='', predV=np.array([])):
         """ (Automatic Frequency-Time ANalysis) aftan analysis:
@@ -752,11 +1152,6 @@ class aftantrace(obspy.core.trace.Trace):
         Output:
         self.ftanparam, a object of ftanParam class, to store output aftan results
         ===========================================================================================================
-        References:
-        Levshin, A. L., and M. H. Ritzwoller. Automated detection, extraction, and measurement of regional surface waves.
-             Monitoring the Comprehensive Nuclear-Test-Ban Treaty: Surface Waves. Birkh?user Basel, 2001. 1531-1545.
-        Bensen, G. D., et al. Processing seismic ambient noise data to obtain reliable broad-band surface wave dispersion measurements.
-             Geophysical Journal International 169.3 (2007): 1239-1260.
         """
         # preparing for data
         try:
@@ -807,7 +1202,7 @@ class aftantrace(obspy.core.trace.Trace):
             sig=np.append(tempsac.data, np.zeros( 32768-tempsac.data.size, dtype='float64' ) )
             nsam=int( float (tempsac.stats.npts) )### for unknown reasons, this has to be done, nsam=int(tempsac.stats.npts)  won't work as an input for aftan
         dt=tempsac.stats.delta
-        # Start to do aftan utilizing pyaftan
+        # Start to do aftan utilizing fortran 77 aftan
         self.ftanparam.nfout1_1,self.ftanparam.arr1_1,self.ftanparam.nfout2_1,self.ftanparam.arr2_1,self.ftanparam.tamp_1, \
                 self.ftanparam.nrow_1,self.ftanparam.ncol_1,self.ftanparam.ampo_1, self.ftanparam.ierr_1= aftan.aftanpg(piover4, nsam, \
                     sig, tb, dt, dist, vmin, vmax, tmin, tmax, tresh, ffact, perc, npoints, taperl, nfin, snr, nprpv, phprper, phprvel)
@@ -823,14 +1218,13 @@ class aftantrace(obspy.core.trace.Trace):
             self.ftanparam.nfout1_2,self.ftanparam.arr1_2,self.ftanparam.nfout2_2,self.ftanparam.arr2_2,self.ftanparam.tamp_2, \
                     self.ftanparam.nrow_2,self.ftanparam.ncol_2,self.ftanparam.ampo_2, self.ftanparam.ierr_2 = aftan.aftanipg(piover4,nsam, \
                         sig,tb,dt,dist,vmin,vmax,tmin2,tmax2,tresh,ffact,perc,npoints,taperl,nfin,snr,fmatch,npred,pred,nprpv,phprper,phprvel)
-        self.ftanparam.station_id=self.stats.network+'.'+self.stats.station 
         return
 
     def plotftan(self, plotflag=3, sacname=''):
         """
         Plot ftan diagram:
         This function plot ftan diagram.
-        =================================================
+        ====================================================================
         Input Parameters:
         plotflag -
             0: only Basic FTAN
@@ -838,7 +1232,7 @@ class aftantrace(obspy.core.trace.Trace):
             2: both
             3: both in one figure
         sacname - sac file name than can be used as the title of the figure
-        =================================================
+        ====================================================================
         """
         try:
             fparam=self.ftanparam
@@ -968,3 +1362,5 @@ class aftantrace(obspy.core.trace.Trace):
         except AttributeError:
             print 'Error: FTAN Parameters are not available!'
         return
+    
+    
