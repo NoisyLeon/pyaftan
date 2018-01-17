@@ -225,8 +225,8 @@ class ftanParam(object):
         """
         if not isinstance(inftanparam, ftanParam):
             raise ValueError('Input inftanparam is not type of ftanParam!')
-        fparam1 = self
-        fparam2 = inftanparam
+        fparam1     = self
+        fparam2     = inftanparam
         if compflag == 1:
             obper1  = fparam1.arr1_1[1,:fparam1.nfout1_1]
             gvel1   = fparam1.arr1_1[2,:fparam1.nfout1_1]
@@ -256,7 +256,7 @@ class ftanParam(object):
             gvel2   = fparam2.arr2_2[2,:fparam2.nfout2_2]
             phvel2  = fparam2.arr2_2[3,:fparam2.nfout2_2]
         plt.figure()
-        ax = plt.subplot()
+        ax          = plt.subplot()
         ax.plot(obper1, gvel1, '--k', lw=3) #
         ax.plot(obper2, gvel2, 'bo', markersize=5)
         plt.xlabel('Period(s)')
@@ -264,7 +264,7 @@ class ftanParam(object):
         plt.title('Group Velocity Comparison')
         if (fparam1.preflag and fparam2.preflag):
             plt.figure()
-            ax = plt.subplot()
+            ax      = plt.subplot()
             ax.plot(obper1, phvel1, '--k', lw=3) #
             ax.plot(obper2, phvel2, 'bo', markersize=5)
             plt.xlabel('Period(s)')
@@ -296,22 +296,22 @@ class InputFtanParam(object): ###
     ===============================================================================================================
     """
     def __init__(self):
-        self.pmf     = True
-        self.piover4 = -1.0
-        self.vmin    = 1.5
-        self.vmax    = 5.0
-        self.tmin    = 4.0
-        self.tmax    = 70.0
-        self.tresh   = 20.0
-        self.ffact   = 1.0
-        self.taperl  = 1.0
-        self.snr     = 0.2
-        self.fmatch  = 1.0
-        self.fhlen   = 0.008
-        self.nfin    = 64
-        self.npoints = 3
-        self.perc    = 50
-        self.predV   = np.array([])
+        self.pmf        = True
+        self.piover4    = -1.0
+        self.vmin       = 1.5
+        self.vmax       = 5.0
+        self.tmin       = 4.0
+        self.tmax       = 70.0
+        self.tresh      = 20.0
+        self.ffact      = 1.0
+        self.taperl     = 1.0
+        self.snr        = 0.2
+        self.fmatch     = 1.0
+        self.fhlen      = 0.008
+        self.nfin       = 64
+        self.npoints    = 3
+        self.perc       = 50
+        self.predV      = np.array([])
     
 class aftantrace(obspy.core.trace.Trace):
     """
@@ -402,15 +402,17 @@ class aftantrace(obspy.core.trace.Trace):
         ===========================================================================================================
         """
         # preparing for data
-        try: self.ftanparam
-        except: self.init_ftanParam()
         try:
-            dist                = self.stats.sac.dist
+            self.ftanparam
         except:
-            dist, az, baz       = obspy.geodetics.base.gps2dist_azimuth(self.stats.sac.evla, self.stats.sac.evlo,
+            self.init_ftanParam()
+        try:
+            dist                    = self.stats.sac.dist
+        except:
+            dist, az, baz           = obspy.geodetics.base.gps2dist_azimuth(self.stats.sac.evla, self.stats.sac.evlo,
                                     self.stats.sac.stla, self.stats.sac.stlo) # distance is in m
-            self.stats.sac.dist = dist/1000.
-            dist=dist/1000.
+            self.stats.sac.dist     = dist/1000.
+            dist                    = dist/1000.
         if predV.size != 0:
             self.ftanparam.preflag  = True
         elif os.path.isfile(phvelname):
@@ -418,7 +420,7 @@ class aftantrace(obspy.core.trace.Trace):
             self.ftanparam.preflag  = True
         else:
             warnings.warn('No predicted dispersion curve for:'+self.stats.network+'.'+self.stats.station, UserWarning, stacklevel=1)
-        # Basic aftan
+        # basic aftan
         self._aftanpg(piover4=piover4, vmin=vmin, vmax=vmax, tmin=tmin, tmax=tmax, tresh=tresh, ffact=ffact, taperl=taperl,
                 nfin=nfin, npoints=npoints, perc=perc, predV=predV)
         # phase matched filter aftan
@@ -455,24 +457,24 @@ class aftantrace(obspy.core.trace.Trace):
             nprpv   = 0
             phprper = np.array([])
             phprvel = np.array([])
-        dt      = self.stats.delta
-        tb      = self.stats.sac.b
-        nsam    = self.stats.npts
-        dist    = self.stats.sac.dist
+        dt              = self.stats.delta
+        tb              = self.stats.sac.b
+        nsam            = self.stats.npts
+        dist            = self.stats.sac.dist
         # alpha=ffact*20.*np.sqrt(dist/1000.)
-        alpha   = ffact*20.
+        alpha           = ffact*20.
         # number of samples for tapering, left and right end
-        ntapb   = int(round(taperl*tmax/dt))
-        ntape   = int(round(tmax/dt))
-        omb     = 2.0*np.pi/tmax
-        ome     = 2.0*np.pi/tmin
+        ntapb           = int(round(taperl*tmax/dt))
+        ntape           = int(round(tmax/dt))
+        omb             = 2.0*np.pi/tmax
+        ome             = 2.0*np.pi/tmin
         # tapering seismogram
-        nb      = int(max(2, round((dist/vmax-tb)/dt)))
-        tamp    = (nb-1)*dt+tb
-        ne      = int(min(nsam, round((dist/vmin-tb)/dt)))
-        nrow    = nfin
-        ncol    = ne-nb+1
-        tArr    = np.arange(ne-nb+1)*dt+tb
+        nb              = int(max(2, round((dist/vmax-tb)/dt)))
+        tamp            = (nb-1)*dt+tb
+        ne              = int(min(nsam, round((dist/vmin-tb)/dt)))
+        nrow            = nfin
+        ncol            = ne-nb+1
+        tArr            = np.arange(ne-nb+1)*dt+tb
         tArr[tArr==0.]  = -1.
         vArr            = dist/tArr
         tdata, ncorr    = self.taper( max(nb, ntapb+1), min(ne, self.stats.npts-ntape), ntapb, ntape)
@@ -483,14 +485,16 @@ class aftantrace(obspy.core.trace.Trace):
         omegaArr        = np.exp(np.log(ome)+np.arange(nfin)*step)
         perArr          = 2.*np.pi/omegaArr
         # FFT
-        if useFFTW: fftdata = pyfftw.interfaces.numpy_fft.fft(tdata, ns)
-        else:   fftdata = np.fft.fft(tdata, ns)
-        omsArr  = np.arange(ns)*domega
-        phaArr  = np.zeros((ne+3-nb, nfin))
-        ampo    = np.zeros((ne+3-nb, nfin))
-        amp     = np.zeros((ne+3-nb, nfin))
+        if useFFTW:
+            fftdata     = pyfftw.interfaces.numpy_fft.fft(tdata, ns)
+        else:
+            fftdata     = np.fft.fft(tdata, ns)
+        omsArr          = np.arange(ns)*domega
+        phaArr          = np.zeros((ne+3-nb, nfin))
+        ampo            = np.zeros((ne+3-nb, nfin))
+        amp             = np.zeros((ne+3-nb, nfin))
         #  main loop by frequency
-        for k in xrange(nfin):
+        for k in range(nfin):
             # Gaussian filter
             filterS     = _aftan_gaussian_filter(alpha=alpha, omega0=omegaArr[k], ns=ns, indata=fftdata, omsArr=omsArr)
             # return fs, filterS
@@ -518,12 +522,12 @@ class aftantrace(obspy.core.trace.Trace):
         ind_all     = []
         ipar_all    = []
         for k in xrange(nfin):
-            ampk        = amp[:,k]
-            ampok       = ampo[:,k]
-            ind_localmax= argrelmax(ampk)[0]
-            omega       = omegaArr[k]
+            ampk            = amp[:,k]
+            ampok           = ampo[:,k]
+            ind_localmax    = argrelmax(ampk)[0]
+            omega           = omegaArr[k]
             if ind_localmax.size == 0:
-                ind_localmax    = np.append(ind_localmax, ne+1-nb)
+                ind_localmax= np.append(ind_localmax, ne+1-nb)
             ind_all.append(ind_localmax)
             dph, tm, ph, t  = self._fmax(amp=ampk, pha=phaArr[:,k], ind=ind_localmax, om=omega, piover4=piover4)
             imax            = tm.argmax()
@@ -565,12 +569,12 @@ class aftantrace(obspy.core.trace.Trace):
         ################################################
         #       Check jumps in dispersion curve 
         ################################################
-        grvel2  = grvel1.copy()
-        tvis2   = tvis1.copy()
-        ampgr2  = ampgr1.copy()
-        phgr2   = phgr1.copy()
-        snr2    = snr1.copy()
-        wdth2   = wdth1.copy()
+        grvel2              = grvel1.copy()
+        tvis2               = tvis1.copy()
+        ampgr2              = ampgr1.copy()
+        phgr2               = phgr1.copy()
+        snr2                = snr1.copy()
+        wdth2               = wdth1.copy()
         ftrig1, trig, ierr  = self._trigger(grvel=grvel1, om=omegaArr, tresh=tresh)
         if ierr !=0:
             deltrig         = trig[1:]-trig[:-1]
@@ -782,7 +786,7 @@ class aftantrace(obspy.core.trace.Trace):
         #  main loop by frequency
         for k in xrange(nfin):
             # Gaussian filter
-            filterS = _aftan_gaussian_filter(alpha=alpha, omega0=omegaArr[k], ns=ns, indata=fftdata, omsArr=omsArr)
+            filterS     = _aftan_gaussian_filter(alpha=alpha, omega0=omegaArr[k], ns=ns, indata=fftdata, omsArr=omsArr)
             if useFFTW:
                 filterT = pyfftw.interfaces.numpy_fft.ifft(filterS, ns)
             else:
@@ -822,23 +826,23 @@ class aftantrace(obspy.core.trace.Trace):
             ipar[2, :]      = tm
             ipar[5, :]      = ph
             if ind_localmax.size==1:
-                lmindex=(ampok[:ind_localmax[0]]).argmin()
-                rmindex=(ampok[ind_localmax[0]:]).argmin()
-                lm=(ampok[:ind_localmax[0]])[lmindex]
-                rm=(ampok[ind_localmax[0]:])[rmindex]
+                lmindex     = (ampok[:ind_localmax[0]]).argmin()
+                rmindex     = (ampok[ind_localmax[0]:]).argmin()
+                lm          = (ampok[:ind_localmax[0]])[lmindex]
+                rm          = (ampok[ind_localmax[0]:])[rmindex]
             else:
-                splitArr=np.split(ampok, ind_localmax)
-                minArr=np.array([])
-                minindexArr=np.array([])
+                splitArr    = np.split(ampok, ind_localmax)
+                minArr      = np.array([])
+                minindexArr = np.array([])
                 for tempArr in splitArr:
-                    temp_ind_min=tempArr.argmin()
-                    minArr=np.append(minArr, tempArr[temp_ind_min])
-                    minindexArr=np.append(minindexArr, temp_ind_min)
-                lm=minArr[:-1]
-                rm=minArr[1:]
-                minindexArr[1:]=minindexArr[1:]+ind_localmax
-                lmindex=minindexArr[:-1]
-                rmindex=minindexArr[1:]
+                    temp_ind_min    = tempArr.argmin()
+                    minArr          = np.append(minArr, tempArr[temp_ind_min])
+                    minindexArr     = np.append(minindexArr, temp_ind_min)
+                lm              = minArr[:-1]
+                rm              = minArr[1:]
+                minindexArr[1:] = minindexArr[1:]+ind_localmax
+                lmindex         = minindexArr[:-1]
+                rmindex         = minindexArr[1:]
             ipar[3,:] = 20.*np.log10(ampok[ind_localmax]/np.sqrt(lm*rm))
             ipar[4,:] = (np.abs(ind_localmax-lmindex)+np.abs(ind_localmax-rmindex))/2.*dt            
             tim1[k]   = ipar[0,imax]
@@ -960,8 +964,8 @@ class aftantrace(obspy.core.trace.Trace):
                 self.ftanparam.nfout2_2 = nfout2
                 arr2_2                  = np.concatenate((per2, tvis2, grvel2, phgr2, ampgr2, snr2, wdth2, amp2))
                 self.ftanparam.arr2_2   = arr2_2.reshape(8, per2.size)
-        self.ftanparam.ampo_2   = amp
-        self.ftanparam.ncol_2, self.ftanparam.nrow_2 = amp.shape
+        self.ftanparam.ampo_2                       = amp
+        self.ftanparam.ncol_2, self.ftanparam.nrow_2= amp.shape
         if nfout2 < perc*nfin/100:
             self.ftanparam.ierr_2   = 2
         else:
@@ -986,10 +990,10 @@ class aftantrace(obspy.core.trace.Trace):
         return
     
     def taper(self, nb, ne, ntapb, ntape):
-        omb     = np.pi/ntapb
-        ome     = np.pi/ntape
-        ncorr   = int(ne+ntape)
-        npts    = self.stats.npts
+        omb         = np.pi/ntapb
+        ome         = np.pi/ntape
+        ncorr       = int(ne+ntape)
+        npts        = self.stats.npts
         if ncorr > npts:
             ncorr   = npts
         dataTapered = np.append(self.data[:ncorr], np.zeros( npts-ncorr ) )
@@ -1005,22 +1009,22 @@ class aftantrace(obspy.core.trace.Trace):
             dataTapered[nb-ntapb-1:nb]  = rwinb*dataTapered[nb-ntapb-1:nb]
             sums                        = 2.*np.sum(rwinb)
         else:
-            k               = np.arange(nb)
-            rwinb           = (np.cos(omb*(nb-k))+1.)/2.
-            dataTapered[:nb]= rwinb*dataTapered[:nb]
-            sums            = 2.*np.sum(rwinb)
+            k                           = np.arange(nb)
+            rwinb                       = (np.cos(omb*(nb-k))+1.)/2.
+            dataTapered[:nb]            = rwinb*dataTapered[:nb]
+            sums                        = 2.*np.sum(rwinb)
         # right end of the signal
         if ne+ntape < npts:
             k                           = np.arange(ntape+1)+ne
             rwine                       = (np.cos(ome*(ne-k))+1.)/2.
             dataTapered[ne-1:ne+ntape]  = dataTapered[ne-1:ne+ntape]*rwine
         elif ne < npts:
-            k                   = np.arange(npts-ne+1)+ne
-            rwine               = (np.cos(ome*(ne-k))+1.)/2.
-            dataTapered[ne-1:]  = dataTapered[ne-1:]*rwine
-        sums= sums+ne-nb-1
-        c   = np.sum(dataTapered[:ncorr])
-        c   = -c/sums
+            k                           = np.arange(npts-ne+1)+ne
+            rwine                       = (np.cos(ome*(ne-k))+1.)/2.
+            dataTapered[ne-1:]          = dataTapered[ne-1:]*rwine
+        sums    = sums+ne-nb-1
+        c       = np.sum(dataTapered[:ncorr])
+        c       = -c/sums
         # detrend
         if nb > ntapb:
             dataTapered[nb-ntapb-1:nb]  = rwinb*c+dataTapered[nb-ntapb-1:nb]
@@ -1028,7 +1032,7 @@ class aftantrace(obspy.core.trace.Trace):
             dataTapered[ne-1:ne+ntape]  = dataTapered[ne-1:ne+ntape] + rwine*c
         elif ne < npts:
             dataTapered[ne-1:]          = dataTapered[ne-1:] + rwine*c
-        dataTapered[nb:ne-1]    = dataTapered[nb:ne-1]+c
+        dataTapered[nb:ne-1]            = dataTapered[nb:ne-1]+c
         return dataTapered, ncorr
     
     def _fmax(self, amp, pha, ind, om, piover4 ):
@@ -1248,9 +1252,9 @@ class aftantrace(obspy.core.trace.Trace):
                                     self.stats.sac.stla, self.stats.sac.stlo) # distance is in m
             self.stats.sac.dist = dist/1000.
             dist                = dist/1000.
-        nprpv   = 0
-        phprper = np.zeros(300)
-        phprvel = np.zeros(300)
+        nprpv                   = 0
+        phprper                 = np.zeros(300)
+        phprvel                 = np.zeros(300)
         if predV.size != 0:
             phprper                 = predV[:,0]
             phprvel                 = predV[:,1]
@@ -1269,19 +1273,20 @@ class aftantrace(obspy.core.trace.Trace):
             self.ftanparam.preflag  = True
         else:
             warnings.warn('No predicted dispersion curve for:'+self.stats.network+'.'+self.stats.station, UserWarning, stacklevel=1)
-        tempsac = self.copy()
-        tb      = self.stats.sac.b
-        length  = len(tempsac.data)
+        tempsac                     = self.copy()
+        tb                          = self.stats.sac.b
+        length                      = len(tempsac.data)
         if length>32768:
             warnings.warn('Length of seismogram is larger than 32768!', UserWarning, stacklevel=1)
-            nsam            = 32768
-            tempsac.data    = tempsac.data[:nsam]
-            tempsac.stats.e = (nsam-1)*tempsac.stats.delta+tb
-            sig             = tempsac.data
+            nsam                    = 32768
+            tempsac.data            = tempsac.data[:nsam]
+            tempsac.stats.e         = (nsam-1)*tempsac.stats.delta+tb
+            sig                     = tempsac.data
         else:
-            sig             = np.append(tempsac.data, np.zeros( 32768-tempsac.data.size, dtype='float64' ) )
-            nsam            = int( float (tempsac.stats.npts) )### for unknown reasons, this has to be done, nsam=int(tempsac.stats.npts)  won't work as an input for aftan
-        dt  = tempsac.stats.delta
+            sig                     = np.append(tempsac.data, np.zeros( 32768-tempsac.data.size, dtype='float64' ) )
+            # # # nsam                    = int( float (tempsac.stats.npts) )### for unknown reasons, this has to be done, nsam=int(tempsac.stats.npts)  won't work as an input for aftan
+            nsam                    = int(tempsac.stats.npts)
+        dt                          = tempsac.stats.delta
         # Start to do aftan utilizing fortran 77 aftan
         self.ftanparam.nfout1_1,self.ftanparam.arr1_1,self.ftanparam.nfout2_1,self.ftanparam.arr2_1,self.ftanparam.tamp_1, \
                 self.ftanparam.nrow_1,self.ftanparam.ncol_1,self.ftanparam.ampo_1, self.ftanparam.ierr_1= aftan.aftanpg(piover4, nsam, \
@@ -1324,8 +1329,8 @@ class aftantrace(obspy.core.trace.Trace):
             fparam  = self.ftanparam
             if fparam.nfout1_1 == 0:
                 return "Error: No Basic FTAN parameters!"
-            dt  = self.stats.delta
-            dist= self.stats.sac.dist
+            dt          = self.stats.delta
+            dist        = self.stats.sac.dist
             if (plotflag!=1 and plotflag!=3):
                 v1      = dist/(fparam.tamp_1+np.arange(fparam.ncol_1)*dt)
                 ampo_1  = fparam.ampo_1[:fparam.ncol_1,:fparam.nrow_1]
@@ -1333,8 +1338,8 @@ class aftantrace(obspy.core.trace.Trace):
                 gvel1_1 = fparam.arr1_1[2,:fparam.nfout1_1]
                 phvel1_1= fparam.arr1_1[3,:fparam.nfout1_1]
                 plt.figure()
-                ax  = plt.subplot()
-                p   = plt.pcolormesh(obper1_1, v1, ampo_1, cmap=cmap,shading='gouraud')
+                ax      = plt.subplot()
+                p       = plt.pcolormesh(obper1_1, v1, ampo_1, cmap=cmap,shading='gouraud')
                 ax.plot(obper1_1, gvel1_1, '--k', lw=3) #
                 if fparam.preflag:
                     ax.plot(obper1_1, phvel1_1, '--w', lw=3) #
@@ -1363,8 +1368,8 @@ class aftantrace(obspy.core.trace.Trace):
                 gvel1_2 = fparam.arr1_2[2,:fparam.nfout1_2]
                 phvel1_2= fparam.arr1_2[3,:fparam.nfout1_2]
                 plt.figure()
-                ax  = plt.subplot()
-                p   = plt.pcolormesh(obper1_2, v2, ampo_2, cmap=cmap,shading='gouraud')
+                ax      = plt.subplot()
+                p       = plt.pcolormesh(obper1_2, v2, ampo_2, cmap=cmap,shading='gouraud')
                 ax.plot(obper1_2, gvel1_2, '--k', lw=3) #
                 if fparam.preflag:
                     ax.plot(obper1_2, phvel1_2, '--w', lw=3) #
@@ -1391,8 +1396,8 @@ class aftantrace(obspy.core.trace.Trace):
                 gvel1_1 = fparam.arr1_1[2,:fparam.nfout1_1]
                 phvel1_1= fparam.arr1_1[3,:fparam.nfout1_1]
                 plt.figure(num=None, figsize=(18, 16), dpi=80, facecolor='w', edgecolor='k')
-                ax  = plt.subplot(2,1,1)
-                p   = plt.pcolormesh(obper1_1, v1, ampo_1, cmap=cmap,shading='gouraud')
+                ax      = plt.subplot(2,1,1)
+                p       = plt.pcolormesh(obper1_1, v1, ampo_1, cmap=cmap,shading='gouraud')
                 ax.plot(obper1_1, gvel1_1, '--k', lw=3) #
                 if fparam.preflag:
                     ax.plot(obper1_1, phvel1_1, '--w', lw=3) #
@@ -1445,39 +1450,47 @@ class aftantrace(obspy.core.trace.Trace):
         return
     
     def get_snr(self, ffact=1.):
-        fparam  = self.ftanparam
-        dist    = self.stats.sac.dist
-        begT    = self.stats.sac.b
-        endT    = self.stats.sac.e
-        dt      = self.stats.delta
+        """ compute snr of the waveform
+        """
+        fparam      = self.ftanparam
+        dist        = self.stats.sac.dist
+        begT        = self.stats.sac.b
+        endT        = self.stats.sac.e
+        dt          = self.stats.delta
         if fparam.nfout2_2!=0:
             o_per   = fparam.arr2_2[1,:]
             g_vel   = fparam.arr2_2[2,:]
-            snrArr  = np.ones(o_per.size)*-1.
-            for i in xrange(fparam.nfout2_2):
-                if g_vel[i]<0 or o_per[i]<0: continue
+            snrArr  = np.ones(o_per.size, dtype=np.float64)*-1.
+            for i in range(fparam.nfout2_2):
+                if g_vel[i]<0 or o_per[i]<0:
+                    continue
                 filtered_tr = self.gaussian_filter_aftan(1./o_per[i], ffact=ffact)
                 minT        = dist/g_vel[i]-o_per[i]/2.
                 maxT        = dist/g_vel[i]+o_per[i]/2.
-                if(minT<begT): minT = begT
-                if(maxT>endT): maxT = endT
+                if(minT<begT):
+                    minT    = begT
+                if(maxT>endT):
+                    maxT    = endT
                 # Noise window
                 minT        = maxT + o_per[i] * 5. + 500.
                 skipflag    = False
-                if( (endT - minT) < 50. ): skipflag=True
+                if( (endT - minT) < 50. ):
+                    skipflag= True
                 elif( (endT - minT) < 1100. ):
-                    maxT= endT - 10.
+                    maxT    = endT - 10.
                 else:
-                    minT= endT - 1100.
-                    maxT= endT - 100.
+                    minT    = endT - 1100.
+                    maxT    = endT - 100.
                 if not skipflag:
-                    ib          = (int)((minT-begT)/dt)
-                    ie          = (int)((maxT-begT)/dt)+2
-                    tempnoise   = filtered_tr[ib:ie]
-                    noiserms    = np.sqrt(( np.sum(tempnoise**2))/(ie-ib-1.) )
-                    amp         = self.ftanparam.arr2_2[7,i]
-                    if noiserms != 0.: snrArr[i]    = amp/noiserms
-                    else: snrArr[i] = 1.
+                    ib              = (int)((minT-begT)/dt)
+                    ie              = (int)((maxT-begT)/dt)+2
+                    tempnoise       = filtered_tr[ib:ie]
+                    noiserms        = np.sqrt(( np.sum(tempnoise**2))/(ie-ib-1.) )
+                    amp             = self.ftanparam.arr2_2[7,i]
+                    if noiserms != 0.:
+                        snrArr[i]   = amp/noiserms
+                    else:
+                        snrArr[i]   = 1.
             self.ftanparam.arr2_2   = np.append(fparam.arr2_2, snrArr)
             self.ftanparam.arr2_2   = self.ftanparam.arr2_2.reshape(9, o_per.size)
         return 
@@ -1515,7 +1528,7 @@ class aftantrace(obspy.core.trace.Trace):
             filtered_seis   = pyfftw.interfaces.numpy_fft.ifft(filtered_sp, ns)
         else:
             filtered_seis   = np.fft.ifft(filtered_sp, ns)
-        filtered_seis   = 2.*filtered_seis[:npts].real
+        filtered_seis       = 2.*filtered_seis[:npts].real
         return filtered_seis
     
     def gaussian_filter_aftan(self, fcenter, ffact=1.):
