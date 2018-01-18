@@ -1285,7 +1285,7 @@ class aftantrace(obspy.core.trace.Trace):
         else:
             sig                     = np.append(tempsac.data, np.zeros( 32768-tempsac.data.size, dtype='float64' ) )
             # # # nsam                    = int( float (tempsac.stats.npts) )### for unknown reasons, this has to be done, nsam=int(tempsac.stats.npts)  won't work as an input for aftan
-            nsam                    = int(tempsac.stats.npts)
+            nsam                    = np.int32(tempsac.stats.npts)###  nsam=int(tempsac.stats.npts)  won't work as an input for aftan
         dt                          = tempsac.stats.delta
         # Start to do aftan utilizing fortran 77 aftan
         self.ftanparam.nfout1_1,self.ftanparam.arr1_1,self.ftanparam.nfout2_1,self.ftanparam.arr2_1,self.ftanparam.tamp_1, \
@@ -1541,26 +1541,26 @@ class aftantrace(obspy.core.trace.Trace):
         ffact   - factor to automatic filter parameter, usualy =1
         ====================================================================
         """
-        npts    = self.stats.npts
-        ns      = 1<<(npts-1).bit_length()
-        df      = 1.0/self.stats.delta/ns
-        nhalf   = ns/2+1
-        fmax    = (nhalf-1)*df
-        alpha   = ffact*20.
+        npts        = self.stats.npts
+        ns          = 1<<(npts-1).bit_length()
+        df          = 1.0/self.stats.delta/ns
+        nhalf       = ns/2+1
+        fmax        = (nhalf-1)*df
+        alpha       = ffact*20.
         if fcenter > fmax:
             fcenter = fmax
-        omega0  = 2.*np.pi*fcenter
-        omsArr  = 2.*np.pi*np.arange(ns)*df
+        omega0      = 2.*np.pi*fcenter
+        omsArr      = 2.*np.pi*np.arange(ns)*df
         if useFFTW:
-            sp  = pyfftw.interfaces.numpy_fft.fft(self.data, ns)
+            sp      = pyfftw.interfaces.numpy_fft.fft(self.data, ns)
         else:
-            sp  = np.fft.fft(self.data, ns)
+            sp      = np.fft.fft(self.data, ns)
         filtered_sp = _aftan_gaussian_filter(alpha=alpha, omega0=omega0, ns=ns, indata=sp, omsArr=omsArr)
         if useFFTW:
             filtered_seis   = pyfftw.interfaces.numpy_fft.ifft(filtered_sp, ns)
         else:
             filtered_seis   = np.fft.ifft(filtered_sp, ns)
-        filtered_seis   = 2.*filtered_seis[:npts].real
+        filtered_seis       = 2.*filtered_seis[:npts].real
         return filtered_seis
     
     
