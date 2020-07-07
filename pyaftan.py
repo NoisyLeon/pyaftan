@@ -18,6 +18,9 @@ This module include two major functions:
     Research Geophysicist
     CGG
     email: lfeng1011@gmail.com
+    
+:Version Date:
+    2020/07/07
 
 :References:
     Levshin, A. L., & Ritzwoller, M. H. (2001). Automated detection, extraction, and measurement of regional surface waves.
@@ -40,6 +43,7 @@ import numba
 from scipy.signal import argrelmax, argrelmin, argrelextrema
 import scipy.interpolate
 import scipy.integrate
+
 try:
     import pyfftw
     useFFTW = True
@@ -51,11 +55,27 @@ try:
 except:
     isaftanf77  = False
 
+# ------------- aftan specific exceptions ---------------------------------------
+class ftanError(Exception):
+    pass
+
+class ftanIOError(ftanError, IOError):
+    pass
+
+class ftanHeaderError(ftanError):
+    """
+    Raised if header has issues.
+    """
+    pass
+
+class ftanDataError(ftanError):
+    """
+    Raised if header has issues.
+    """
+    pass
 #============================================================================
 # Auxiliary functions
 #============================================================================
-
-
 @numba.jit(numba.float32[:](numba.float32[:], numba.int64, numba.int64, numba.int64, numba.int64, numba.int64), nopython=True)
 def _taper(data, npts, nb, ne, ntapb, ntape):
     """Taper the input data with cosine window
@@ -67,9 +87,9 @@ def _taper(data, npts, nb, ne, ntapb, ntape):
         ncorr   = npts
     dataTapered = np.zeros(npts, dtype = np.float32)
     dataTapered[:ncorr]             = data[:ncorr]
-    ##################################
+    #=================================
     #zerp padding and cosine tapering
-    ##################################
+    #=================================
     # left end of the signal
     if nb-ntapb-1 > 0:
         dataTapered[:nb-ntapb-1]    = 0.
@@ -302,7 +322,7 @@ def _freq_time_analysis(tb, nfin, npts, nb, amp, ampo, phaArr, omegaArr, perArr,
                 break
             if (amp[i-1, k] < amp[i, k]) and (amp[i+1, k] < amp[i, k]):
                 dph, tm, ph, t  = _fmax(dt, i, amp[:,k], phaArr[:,k], omegaArr[k], piover4)
-                ipar[k, 0, j]   = (nb+i-2+t)*dt # note the difference with aftanf77, due to ind_localmax
+                ipar[k, 0, j]   = (nb+i-2+t)*dt 
                 ipar[k, 1, j]   = 2.*np.pi*dt/dph
                 ipar[k, 2, j]   = tm
                 ipar[k, 5, j]   = ph
@@ -317,7 +337,7 @@ def _freq_time_analysis(tb, nfin, npts, nb, amp, ampo, phaArr, omegaArr, perArr,
         # No local maximum
         if j == 0:
             dph, tm, ph, t  = _fmax(dt, (npts-2), amp[:,k], phaArr[:,k], omegaArr[k], piover4)
-            ipar[k, 0, j]   = (nb+(npts-2)-2+t)*dt # note the difference with aftanf77, due to ind_localmax
+            ipar[k, 0, j]   = (nb+(npts-2)-2+t)*dt 
             ipar[k, 1, j]   = 2.*np.pi*dt/dph
             ipar[k, 2, j]   = tm
             ipar[k, 5, j]   = ph
@@ -346,7 +366,7 @@ def _freq_time_analysis(tb, nfin, npts, nb, amp, ampo, phaArr, omegaArr, perArr,
         if tim1[k] +tb > 0.:
             grvel1[k] = dist/(tim1[k] +tb) 
         snr1[k]   = ipar[k, 3, imaxlmax]
-        wdth1[k]  = ipar[k, 4, imaxlmax] ### Note half width is not completely the same as ftanf77, need further check!!!
+        wdth1[k]  = ipar[k, 4, imaxlmax] 
         phgr1[k]  = ipar[k, 5, imaxlmax]
     #==========================================================================
     #       Check jumps in dispersion curve 
@@ -745,7 +765,6 @@ class aftantrace(obspy.core.trace.Trace):
     A derived class inherited from obspy.core.trace.Trace. To handle surface wave dispersion analysis
     """
     ftanparam   = ftanParam()
-    fft_plan_bwd= None
     def reverse(self):
         """Reverse the trace
         """
@@ -756,10 +775,10 @@ class aftantrace(obspy.core.trace.Trace):
         """Turn the double lagged cross-correlation data to one single lag
         """
         if abs(self.stats.sac.b+self.stats.sac.e) > self.stats.delta:
-            raise ValueError('Error: Not neg-pos trace!')
+            raise ftanDataError('Not neg-pos trace!')
         if self.stats.npts%2 != 1:
-            raise ValueError('Error: Incompatible begin and end time!')
-        nhalf                   = (self.stats.npts-1)/2+1
+            raise ftanHeaderError('Incompatible begin and end time!')
+        nhalf                   = int((self.stats.npts-1)/2+1)
         neg                     = self.data[:nhalf]
         pos                     = self.data[nhalf-1:self.stats.npts]
         neg                     = neg[::-1]
@@ -773,7 +792,7 @@ class aftantrace(obspy.core.trace.Trace):
         """Get the negative lag of a cross-correlation record
         """
         if abs(self.stats.sac.b+self.stats.sac.e) > self.stats.delta:
-            raise ValueError('Error: Not neg-pos trace!')
+            raise ftanDataError('Not neg-pos trace!')
         negTr                   = self.copy()
         t                       = self.stats.starttime
         L                       = (int)((self.stats.npts-1)/2)+1
@@ -788,7 +807,7 @@ class aftantrace(obspy.core.trace.Trace):
         """Get the positive lag of a cross-correlation record
         """
         if abs(self.stats.sac.b+self.stats.sac.e)>self.stats.delta:
-            raise ValueError('Error: Not neg-pos trace!')
+            raise ftanDataError('Not neg-pos trace!')
         posTr                   = self.copy()
         t                       = self.stats.starttime
         L                       = (int)((self.stats.npts-1)/2)+1
@@ -842,10 +861,11 @@ class aftantrace(obspy.core.trace.Trace):
         # basic aftan
         self._aftanpg(piover4=piover4, vmin=vmin, vmax=vmax, tmin=tmin, tmax=tmax, tresh=tresh, ffact=ffact, taperl=taperl,
                 nfin=nfin, npoints=npoints, perc=perc, predV=predV)
-
         # phase matched filter aftan
         if pmf:
-            return self._aftanipg(piover4=piover4, vmin=vmin, vmax=vmax, tresh=tresh, ffact=ffact, taperl=taperl,
+            if self.ftanparam.nfout2_1<3:
+                return
+            self._aftanipg(piover4=piover4, vmin=vmin, vmax=vmax, tresh=tresh, ffact=ffact, taperl=taperl,
                 snr=snr, fmatch=fmatch, nfin=nfin, npoints=npoints, perc=perc, predV=predV)
         return
     
@@ -928,7 +948,6 @@ class aftantrace(obspy.core.trace.Trace):
             # Gaussian filter
             filterS     = _aftan_gaussian_filter(alpha, omegaArr[k], ns, fftdata, np.float32(omsArr))
             if useFFTW:
-                # # # filterT = pyfftw.interfaces.numpy_fft.ifft(filterS, ns) old
                 fftw_plan.update_arrays(filterS, out_filter)
                 fftw_plan.execute()
                 filterT = out_filter/ns
@@ -1034,7 +1053,9 @@ class aftantrace(obspy.core.trace.Trace):
         ntape   = int(round(tmax/dt))
         omb     = 2.0*np.pi/tmax
         ome     = 2.0*np.pi/tmin
+        #===========================
         # tapering seismogram
+        #===========================
         nb      = int(max(2, round((dist/vmax-tb)/dt)))
         tamp    = (nb-1)*dt+tb
         ne      = int(min(nsam, round((dist/vmin-tb)/dt)))
@@ -1051,9 +1072,9 @@ class aftantrace(obspy.core.trace.Trace):
         step            = (np.log(omb)-np.log(ome))/(nfin -1)
         omegaArr        = np.exp(np.log(ome)+np.arange(nfin)*step)
         perArr          = 2.*np.pi/omegaArr
-        ################################################
+        #===========================
         # Phase Matched Filtering
-        ################################################
+        #===========================
         # FFT
         if useFFTW:
             fftdata     = np.complex64(pyfftw.interfaces.numpy_fft.fft(tdata, ns))
@@ -1069,9 +1090,7 @@ class aftantrace(obspy.core.trace.Trace):
         omstart                             = float(round(omstart/domega))*domega
         inde                                = min(inde, ns/2+2)
         pha_cor                             = np.zeros(ns, dtype='complex64')
-        #==============================
         # integrate to get the phase
-        #==============================
         ind                                 = np.where(omdom >= np.sqrt(omb*ome))[0][0]
         omega_avg                           = omdom[ind]
         tg0, cubicspline                    = self._pred_cur(omega_avg)
@@ -1439,7 +1458,7 @@ class aftantrace(obspy.core.trace.Trace):
                 plt.ylabel('Velocity(km/s)')
                 plt.title('PMF FTAN Diagram '+sacname)
         except AttributeError:
-            print ('Error: FTAN Parameters are not available!')
+            raise  ftanHeaderError('FTAN Parameters are not available!')
         return
     
     def get_snr(self, ffact=1.):
@@ -1490,7 +1509,7 @@ class aftantrace(obspy.core.trace.Trace):
                 
     def gaussian_filter_snr(self, fcenter, fhlen=0.008):
         """
-        Gaussian filter designed for SNR analysis, utilize pyfftw to do fft
+        Gaussian filter designed for SNR analysis
         exp( (-0.5/fhlen^2)*(f-fcenter)^2 )
         ====================================================================
         Input parameters:
@@ -1509,24 +1528,18 @@ class aftantrace(obspy.core.trace.Trace):
         F       = np.arange(ns)*df
         gauamp  = F - fcenter
         sf      = np.exp(alpha*gauamp**2)
-        if useFFTW:
-            sp  = pyfftw.interfaces.numpy_fft.fft(self.data, ns)
-        else:
-            sp  = np.fft.fft(self.data, ns)
+        sp      = np.fft.fft(self.data, ns)
         filtered_sp         = sf*sp
         filtered_sp[ns/2:]  = 0
         filtered_sp[0]      /= 2
         filtered_sp[ns/2-1] = filtered_sp[ns/2-1].real+0.j
-        if useFFTW:
-            filtered_seis   = pyfftw.interfaces.numpy_fft.ifft(filtered_sp, ns)
-        else:
-            filtered_seis   = np.fft.ifft(filtered_sp, ns)
+        filtered_seis       = np.fft.ifft(filtered_sp, ns)
         filtered_seis       = 2.*filtered_seis[:npts].real
         return filtered_seis
     
     def gaussian_filter_aftan(self, fcenter, ffact=1.):
         """
-        Gaussian filter designed for SNR analysis, utilize pyfftw to do fft
+        Gaussian filter designed for SNR analysis
         exp( (-0.5/fhlen^2)*(f-fcenter)^2 )
         ====================================================================
         Input parameters:
@@ -1544,10 +1557,7 @@ class aftantrace(obspy.core.trace.Trace):
             fcenter = fmax
         omega0      = 2.*np.pi*fcenter
         omsArr      = 2.*np.pi*np.arange(ns)*df
-        if useFFTW:
-            sp      = pyfftw.interfaces.numpy_fft.fft(self.data, ns)
-        else:
-            sp      = np.fft.fft(self.data, ns)
+        sp          = np.fft.fft(self.data, ns)
         filtered_sp = _aftan_gaussian_filter(np.float32(alpha), np.float32(omega0), np.int64(ns), np.complex64(sp), np.float32(omsArr))
         # filtered_sp = _aftan_gaussian_filter(alpha=alpha, omega0=omega0, ns=ns, indata=sp, omsArr=omsArr)
         if useFFTW:

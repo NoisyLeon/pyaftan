@@ -5,9 +5,11 @@ import numpy as np
 
 
 
-tr=obspy.read('./test.sac')[0]
+tr=obspy.read('./COR_TA.M14A_TA.M17A.SAC')[0]
 atr1=pyaftan.aftantrace(tr.data, tr.stats)
 atr2=pyaftan.aftantrace(tr.data, tr.stats)
+atr1.makesym()
+atr2.makesym()
 # aftan analysis using pyaftan
 atr1.aftan(tmin=2., tmax=40., phvelname='ak135.disp')
 atr1.plotftan(plotflag=3)
